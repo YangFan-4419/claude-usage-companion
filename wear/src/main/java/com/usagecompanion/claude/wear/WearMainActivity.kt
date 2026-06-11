@@ -132,28 +132,28 @@ class WearMainActivity : Activity() {
             drawRing(canvas, outer, stroke, accent, snapshot.fiveHourPercent)
 
             textPaint.typeface = android.graphics.Typeface.DEFAULT_BOLD
-            textPaint.textSize = minSize * 0.052f
+            textPaint.textSize = minSize * 0.054f
             textPaint.color = Color.WHITE
-            canvas.drawText("Claude Usage", centerX, centerY - minSize * 0.18f, textPaint)
-
-            textPaint.typeface = android.graphics.Typeface.DEFAULT
-            textPaint.textSize = minSize * 0.03f
-            textPaint.color = Color.parseColor(CLAUDE_ORANGE)
-            canvas.drawText(snapshot.planLabel, centerX, centerY - minSize * 0.125f, textPaint)
+            canvas.drawText("Claude Usage", centerX, centerY - minSize * 0.17f, textPaint)
 
             textPaint.typeface = android.graphics.Typeface.DEFAULT_BOLD
-            textPaint.textSize = minSize * 0.145f
+            textPaint.textSize = minSize * 0.16f
             textPaint.color = Color.WHITE
             canvas.drawText("${snapshot.fiveHourPercent}%", centerX, centerY + minSize * 0.035f, textPaint)
 
             textPaint.typeface = android.graphics.Typeface.DEFAULT
-            textPaint.textSize = minSize * 0.037f
+            textPaint.textSize = minSize * 0.038f
             textPaint.color = Color.parseColor(COLOR_TEXT_DIM)
-            canvas.drawText("5h used · reset ${snapshot.fiveHourResetLabel}", centerX, centerY + minSize * 0.14f, textPaint)
+            canvas.drawText("5h used", centerX, centerY + minSize * 0.14f, textPaint)
 
             textPaint.textSize = minSize * 0.032f
             textPaint.color = Color.parseColor(COLOR_TEXT_FAINT)
-            canvas.drawText("7d ${snapshot.sevenDayPercent}% · reset ${snapshot.sevenDayResetLabel}", centerX, centerY + minSize * 0.195f, textPaint)
+            canvas.drawText(
+                "reset ${snapshot.fiveHourResetLabel} · 7d ${snapshot.sevenDayPercent}%",
+                centerX,
+                centerY + minSize * 0.195f,
+                textPaint,
+            )
         }
 
         private fun drawRing(canvas: Canvas, rect: RectF, stroke: Float, color: String, percent: Int) {

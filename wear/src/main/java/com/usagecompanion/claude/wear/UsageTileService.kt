@@ -48,38 +48,67 @@ class UsageTileService : TileService() {
     }
 
     private fun tileContent(snapshot: WearSnapshot): LayoutElementBuilders.LayoutElement {
+        val accent = colorFor(snapshot)
+        val progress = if (snapshot.hasUsage) snapshot.fiveHourPercent else 0
         val title = if (snapshot.hasUsage) "Claude Usage" else "Set up"
-        val plan = if (snapshot.hasUsage) snapshot.planLabel else "Open phone app"
         val primary = if (snapshot.hasUsage) "${snapshot.fiveHourPercent}%" else "--"
-        val secondary = if (snapshot.hasUsage) {
-            "5h used · 7d ${snapshot.sevenDayPercent}%"
+        val label = if (snapshot.hasUsage) {
+            "5h used"
+        } else {
+            "Open phone app"
+        }
+        val reset = if (snapshot.hasUsage) {
+            "reset ${snapshot.fiveHourResetLabel} · 7d ${snapshot.sevenDayPercent}%"
         } else {
             "OAuth token required"
         }
-        val reset = if (snapshot.hasUsage) {
-            "reset ${snapshot.fiveHourResetLabel}"
-        } else {
-            ""
-        }
 
-        return LayoutElementBuilders.Column.Builder()
+        val content = LayoutElementBuilders.Column.Builder()
+            .setWidth(DimensionBuilders.expand())
+            .setHeight(DimensionBuilders.wrap())
+            .setHorizontalAlignment(LayoutElementBuilders.HORIZONTAL_ALIGN_CENTER)
+            .addContent(text(title, 13f, COLOR_ON_SURFACE, LayoutElementBuilders.FONT_WEIGHT_MEDIUM))
+            .addContent(text(primary, 38f, COLOR_ON_SURFACE, LayoutElementBuilders.FONT_WEIGHT_BOLD))
+            .addContent(text(label, 11f, COLOR_ON_SURFACE_VARIANT, LayoutElementBuilders.FONT_WEIGHT_NORMAL))
+            .addContent(text(reset, 10f, COLOR_ON_SURFACE_VARIANT, LayoutElementBuilders.FONT_WEIGHT_NORMAL))
+            .build()
+
+        return LayoutElementBuilders.Box.Builder()
             .setWidth(DimensionBuilders.expand())
             .setHeight(DimensionBuilders.expand())
             .setHorizontalAlignment(LayoutElementBuilders.HORIZONTAL_ALIGN_CENTER)
-            .setModifiers(background(COLOR_BACKGROUND))
-            .addContent(text(title, 13f, COLOR_ON_SURFACE, LayoutElementBuilders.FONT_WEIGHT_MEDIUM))
-            .addContent(text(plan, 10f, COLOR_PRIMARY, LayoutElementBuilders.FONT_WEIGHT_NORMAL))
-            .addContent(text(primary, 40f, colorFor(snapshot), LayoutElementBuilders.FONT_WEIGHT_BOLD))
-            .addContent(text(secondary, 11f, COLOR_ON_SURFACE_VARIANT, LayoutElementBuilders.FONT_WEIGHT_NORMAL))
-            .addContent(text(reset, 10f, COLOR_ON_SURFACE_VARIANT, LayoutElementBuilders.FONT_WEIGHT_NORMAL))
+            .setVerticalAlignment(LayoutElementBuilders.VERTICAL_ALIGN_CENTER)
+            .setModifiers(tileModifiers())
+            .addContent(progressArc(COLOR_TRACK, 100))
+            .addContent(progressArc(accent, progress))
+            .addContent(content)
             .build()
     }
 
-    private fun background(color: Int): ModifiersBuilders.Modifiers {
+    private fun progressArc(color: Int, percent: Int): LayoutElementBuilders.Arc {
+        return LayoutElementBuilders.Arc.Builder()
+            .setAnchorAngle(DimensionBuilders.degrees(PROGRESS_START_ANGLE))
+            .setAnchorType(LayoutElementBuilders.ARC_ANCHOR_START)
+            .addContent(
+                LayoutElementBuilders.ArcLine.Builder()
+                    .setLength(DimensionBuilders.degrees(PROGRESS_SWEEP * percent.coerceIn(0, 100) / 100f))
+                    .setThickness(DimensionBuilders.dp(8f))
+                    .setColor(ColorBuilders.argb(color))
+                    .build(),
+            )
+            .build()
+    }
+
+    private fun tileModifiers(): ModifiersBuilders.Modifiers {
         return ModifiersBuilders.Modifiers.Builder()
             .setBackground(
                 ModifiersBuilders.Background.Builder()
-                    .setColor(ColorBuilders.argb(color))
+                    .setColor(ColorBuilders.argb(COLOR_BACKGROUND))
+                    .build(),
+            )
+            .setPadding(
+                ModifiersBuilders.Padding.Builder()
+                    .setAll(DimensionBuilders.dp(22f))
                     .build(),
             )
             .build()
@@ -116,14 +145,17 @@ class UsageTileService : TileService() {
     }
 
     companion object {
-        private const val RESOURCES_VERSION = "1"
+        private const val RESOURCES_VERSION = "3"
         private const val COLOR_BACKGROUND = 0xFF000000.toInt()
         private const val COLOR_PRIMARY = 0xFFD97250.toInt()
         private const val COLOR_TERTIARY = 0xFFFBBC04.toInt()
         private const val COLOR_DEEP_ORANGE = 0xFFF97316.toInt()
         private const val COLOR_ERROR = 0xFFEF4444.toInt()
         private const val COLOR_OUTLINE = 0xFF9CA3AF.toInt()
+        private const val COLOR_TRACK = 0xFF2B2B2B.toInt()
         private const val COLOR_ON_SURFACE = 0xFFFFFFFF.toInt()
         private const val COLOR_ON_SURFACE_VARIANT = 0xFFC9C3BF.toInt()
+        private const val PROGRESS_START_ANGLE = 0f
+        private const val PROGRESS_SWEEP = 360f
     }
 }

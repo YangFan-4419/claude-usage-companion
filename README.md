@@ -6,9 +6,9 @@ The phone stores the OAuth token locally, refreshes Claude usage directly, and s
 
 ## Screenshots
 
-| Phone app | Wear app |
-| --- | --- |
-| ![Phone usage dashboard](docs/images/phone-usage.png) | ![Wear usage ring](docs/images/wear-ring.png) |
+| Phone app | Wear app | Wear Tile |
+| --- | --- | --- |
+| ![Phone usage dashboard](docs/images/phone-usage.png) | ![Wear usage ring](docs/images/wear-ring.png) | ![Wear usage tile](docs/images/wear-tile.png) |
 
 ## Features
 
