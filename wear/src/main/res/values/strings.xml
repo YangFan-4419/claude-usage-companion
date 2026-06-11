@@ -1,0 +1,4 @@
+<resources>
+    <string name="app_name">Claude Usage</string>
+    <string name="tile_label">Claude Usage</string>
+</resources>
