@@ -14,6 +14,8 @@ data class WearSnapshot(
     val burnRateLabel: String,
     val hasUsage: Boolean,
     val watchStyle: String,
+    val tileShowsSevenDay: Boolean,
+    val highUsageAlertsEnabled: Boolean,
     val updatedAt: Long,
 )
 
@@ -32,6 +34,8 @@ class WearSnapshotStore(context: Context) {
             burnRateLabel = prefs.getString(KEY_BURN, null) ?: "--",
             hasUsage = prefs.getBoolean(KEY_HAS_USAGE, false),
             watchStyle = prefs.getString(KEY_WATCH_STYLE, null) ?: STYLE_RING,
+            tileShowsSevenDay = prefs.getBoolean(KEY_TILE_SHOWS_SEVEN_DAY, true),
+            highUsageAlertsEnabled = prefs.getBoolean(KEY_HIGH_USAGE_ALERTS, false),
             updatedAt = prefs.getLong(KEY_UPDATED_AT, 0L),
         )
     }
@@ -48,8 +52,19 @@ class WearSnapshotStore(context: Context) {
             .putString(KEY_BURN, dataMap.getString(KEY_BURN) ?: "--")
             .putBoolean(KEY_HAS_USAGE, dataMap.getBoolean(KEY_HAS_USAGE, false))
             .putString(KEY_WATCH_STYLE, dataMap.getString(KEY_WATCH_STYLE) ?: STYLE_RING)
+            .putBoolean(KEY_TILE_SHOWS_SEVEN_DAY, dataMap.getBoolean(KEY_TILE_SHOWS_SEVEN_DAY, true))
+            .putBoolean(KEY_HIGH_USAGE_ALERTS, dataMap.getBoolean(KEY_HIGH_USAGE_ALERTS, false))
             .putLong(KEY_UPDATED_AT, dataMap.getLong(KEY_UPDATED_AT, System.currentTimeMillis()))
             .apply()
+    }
+
+    fun updatePreferences(tileShowsSevenDay: Boolean, highUsageAlertsEnabled: Boolean): WearSnapshot {
+        prefs.edit()
+            .putBoolean(KEY_TILE_SHOWS_SEVEN_DAY, tileShowsSevenDay)
+            .putBoolean(KEY_HIGH_USAGE_ALERTS, highUsageAlertsEnabled)
+            .putLong(KEY_UPDATED_AT, System.currentTimeMillis())
+            .apply()
+        return read()
     }
 
     companion object {
@@ -64,6 +79,8 @@ class WearSnapshotStore(context: Context) {
         const val KEY_BURN = "burn"
         const val KEY_HAS_USAGE = "has_usage"
         const val KEY_WATCH_STYLE = "watch_style"
+        const val KEY_TILE_SHOWS_SEVEN_DAY = "tile_shows_seven_day"
+        const val KEY_HIGH_USAGE_ALERTS = "high_usage_alerts"
         const val KEY_UPDATED_AT = "updated_at"
         const val STYLE_RING = "ring"
         const val STYLE_BAR = "bar"

@@ -10,9 +10,11 @@ import android.widget.RemoteViews
 import com.usagecompanion.claude.MainActivity
 import com.usagecompanion.claude.R
 import com.usagecompanion.claude.data.UsageRepository
+import com.usagecompanion.claude.data.UsageRefreshScheduler
 
 class UsageWidgetProvider : AppWidgetProvider() {
     override fun onUpdate(context: Context, manager: AppWidgetManager, appWidgetIds: IntArray) {
+        UsageRefreshScheduler(context).scheduleNext()
         appWidgetIds.forEach { appWidgetId ->
             updateWidget(context, manager, appWidgetId)
         }

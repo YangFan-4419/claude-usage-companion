@@ -1,5 +1,7 @@
 package com.usagecompanion.claude
 
+import android.Manifest
+import android.os.Build
 import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
@@ -23,11 +25,12 @@ import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.ElevatedCard
-import androidx.compose.material3.FilterChip
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Surface
+import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.material3.lightColorScheme
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -44,13 +47,12 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.unit.dp
 import com.usagecompanion.claude.data.TokenVault
-import com.usagecompanion.claude.data.UsageRepository
+import com.usagecompanion.claude.data.UsageRefreshManager
+import com.usagecompanion.claude.data.UsageRefreshScheduler
 import com.usagecompanion.claude.data.UsageSnapshot
 import com.usagecompanion.claude.data.WatchProgressStyle
-import com.usagecompanion.claude.data.WearSyncRepository
-import com.usagecompanion.claude.data.ClaudeUsageClient
-import com.usagecompanion.claude.widget.UsageWidgetProvider
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
@@ -59,18 +61,23 @@ class MainActivity : ComponentActivity() {
         super.onCreate(savedInstanceState)
 
         val tokenVault = TokenVault(this)
-        val repository = UsageRepository(this)
-        val wearSyncRepository = WearSyncRepository(this)
-        val usageClient = ClaudeUsageClient()
+        val refreshManager = UsageRefreshManager(this, tokenVault = tokenVault)
+        val refreshScheduler = UsageRefreshScheduler(this)
+        if (tokenVault.readToken().isNullOrBlank()) {
+            refreshScheduler.cancel()
+        } else {
+            refreshScheduler.scheduleNext()
+        }
 
         setContent {
             ClaudeUsageApp(
                 tokenVault = tokenVault,
-                repository = repository,
-                usageClient = usageClient,
-                onSnapshotChanged = {
-                    UsageWidgetProvider.updateAll(this)
-                    wearSyncRepository.publish(repository.currentSnapshot())
+                refreshManager = refreshManager,
+                refreshScheduler = refreshScheduler,
+                onRequestNotificationPermission = {
+                    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+                        requestPermissions(arrayOf(Manifest.permission.POST_NOTIFICATIONS), 90)
+                    }
                 },
             )
         }
@@ -80,29 +87,28 @@ class MainActivity : ComponentActivity() {
 @Composable
 private fun ClaudeUsageApp(
     tokenVault: TokenVault,
-    repository: UsageRepository,
-    usageClient: ClaudeUsageClient,
-    onSnapshotChanged: () -> Unit,
+    refreshManager: UsageRefreshManager,
+    refreshScheduler: UsageRefreshScheduler,
+    onRequestNotificationPermission: () -> Unit,
 ) {
     var token by remember { mutableStateOf("") }
-    var snapshot by remember { mutableStateOf(repository.currentSnapshot()) }
+    var savedToken by remember { mutableStateOf("") }
+    var snapshot by remember { mutableStateOf(refreshManager.currentSnapshot()) }
     var saveState by remember { mutableStateOf("") }
     var isRefreshing by remember { mutableStateOf(false) }
     val scope = rememberCoroutineScope()
 
-    suspend fun refreshUsage(currentToken: String, style: WatchProgressStyle) {
+    suspend fun refreshUsage(currentToken: String, style: WatchProgressStyle, force: Boolean) {
         if (currentToken.isBlank()) return
         isRefreshing = true
         saveState = "Refreshing usage..."
         val result = withContext(Dispatchers.IO) {
-            usageClient.fetch(currentToken, style)
+            refreshManager.refreshIfStale(force = force, style = style)
         }
         result
             .onSuccess { refreshed ->
-                repository.save(refreshed)
                 snapshot = refreshed
                 saveState = "Usage refreshed."
-                onSnapshotChanged()
             }
             .onFailure { error ->
                 saveState = error.message ?: "Usage refresh failed"
@@ -113,11 +119,30 @@ private fun ClaudeUsageApp(
     LaunchedEffect(Unit) {
         val storedToken = tokenVault.readToken().orEmpty()
         token = storedToken
-        val initialSnapshot = repository.tokenStateSnapshot(hasToken = storedToken.isNotBlank())
+        savedToken = storedToken
+        val initialSnapshot = refreshManager.tokenStateSnapshot(hasToken = storedToken.isNotBlank())
         snapshot = initialSnapshot
-        onSnapshotChanged()
         if (storedToken.isNotBlank()) {
-            refreshUsage(storedToken, initialSnapshot.watchStyle)
+            refreshScheduler.scheduleNext()
+            refreshUsage(storedToken, initialSnapshot.watchStyle, force = false)
+        }
+    }
+
+    LaunchedEffect(savedToken) {
+        if (savedToken.isBlank()) return@LaunchedEffect
+        while (true) {
+            delay(UsageRefreshManager.CACHE_TTL_MS)
+            refreshUsage(savedToken, snapshot.watchStyle, force = false)
+        }
+    }
+
+    LaunchedEffect(Unit) {
+        while (true) {
+            delay(2_000L)
+            val latest = refreshManager.currentSnapshot()
+            if (latest != snapshot) {
+                snapshot = latest
+            }
         }
     }
 
@@ -143,32 +168,44 @@ private fun ClaudeUsageApp(
                 }
                 PhoneSettingsPanel(
                     token = token,
-                    watchStyle = snapshot.watchStyle,
+                    tileShowsSevenDay = snapshot.tileShowsSevenDay,
+                    highUsageAlertsEnabled = snapshot.highUsageAlertsEnabled,
                     saveState = saveState,
                     onTokenChange = { token = it },
-                    onStyleChange = { style ->
-                        snapshot = repository.updateWatchStyle(style)
-                        saveState = "Watch style synced."
-                        onSnapshotChanged()
+                    onTileShowsSevenDayChange = { enabled ->
+                        snapshot = refreshManager.updateTileShowsSevenDay(enabled)
+                        saveState = "Tile setting synced."
+                    },
+                    onHighUsageAlertsChange = { enabled ->
+                        if (enabled) onRequestNotificationPermission()
+                        snapshot = refreshManager.updateHighUsageAlerts(enabled)
+                        saveState = if (enabled) {
+                            "High usage alerts enabled."
+                        } else {
+                            "High usage alerts disabled."
+                        }
                     },
                     onSave = {
                         tokenVault.saveToken(token)
-                        snapshot = repository.tokenStateSnapshot(hasToken = token.isNotBlank())
+                        savedToken = token
+                        snapshot = refreshManager.tokenStateSnapshot(hasToken = token.isNotBlank())
                         saveState = if (token.isBlank()) {
                             "Add a token on this phone to sync usage."
                         } else {
                             "Token saved. Refreshing usage..."
                         }
-                        onSnapshotChanged()
                         if (token.isNotBlank()) {
+                            refreshScheduler.scheduleNext()
                             scope.launch {
-                                refreshUsage(token, snapshot.watchStyle)
+                                refreshUsage(token, snapshot.watchStyle, force = true)
                             }
+                        } else {
+                            refreshScheduler.cancel()
                         }
                     },
                     onRefresh = {
                         scope.launch {
-                            refreshUsage(token, snapshot.watchStyle)
+                            refreshUsage(token, snapshot.watchStyle, force = true)
                         }
                     },
                     isRefreshing = isRefreshing,
@@ -327,14 +364,19 @@ private fun UsageProgressRow(
 @Composable
 private fun PhoneSettingsPanel(
     token: String,
-    watchStyle: WatchProgressStyle,
+    tileShowsSevenDay: Boolean,
+    highUsageAlertsEnabled: Boolean,
     saveState: String,
     onTokenChange: (String) -> Unit,
-    onStyleChange: (WatchProgressStyle) -> Unit,
+    onTileShowsSevenDayChange: (Boolean) -> Unit,
+    onHighUsageAlertsChange: (Boolean) -> Unit,
     onSave: () -> Unit,
     onRefresh: () -> Unit,
     isRefreshing: Boolean,
 ) {
+    var accountExpanded by remember { mutableStateOf(false) }
+    val accountStatus = if (token.isBlank()) "No OAuth token saved" else "OAuth token saved"
+
     Card(
         modifier = Modifier.fillMaxWidth(),
         shape = RoundedCornerShape(12.dp),
@@ -349,33 +391,63 @@ private fun PhoneSettingsPanel(
                 style = MaterialTheme.typography.titleMedium,
                 fontWeight = FontWeight.Bold,
             )
-            OutlinedTextField(
-                value = token,
-                onValueChange = onTokenChange,
+            Row(
                 modifier = Modifier.fillMaxWidth(),
-                singleLine = true,
-                label = { Text("Stored only on this device") },
-                visualTransformation = PasswordVisualTransformation(),
-            )
-            Text(
-                text = "Watch progress style",
-                style = MaterialTheme.typography.labelLarge,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-            )
-            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                WatchProgressStyle.entries.forEach { style ->
-                    FilterChip(
-                        selected = watchStyle == style,
-                        onClick = { onStyleChange(style) },
-                        label = { Text(style.label) },
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Column(
+                    modifier = Modifier.weight(1f),
+                    verticalArrangement = Arrangement.spacedBy(2.dp),
+                ) {
+                    Text(
+                        text = "Account",
+                        style = MaterialTheme.typography.titleSmall,
+                        fontWeight = FontWeight.SemiBold,
+                    )
+                    Text(
+                        text = accountStatus,
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
                 }
+                TextButton(onClick = { accountExpanded = !accountExpanded }) {
+                    Text(if (accountExpanded) "Done" else "Edit")
+                }
             }
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                Button(onClick = onSave) {
+            if (accountExpanded) {
+                OutlinedTextField(
+                    value = token,
+                    onValueChange = onTokenChange,
+                    modifier = Modifier.fillMaxWidth(),
+                    singleLine = true,
+                    label = { Text("Stored only on this device") },
+                    visualTransformation = PasswordVisualTransformation(),
+                )
+                Button(onClick = {
+                    onSave()
+                    accountExpanded = false
+                }) {
                     Text("Save on phone")
                 }
-                Spacer(modifier = Modifier.width(12.dp))
+            }
+            Text(
+                text = "Watch settings",
+                style = MaterialTheme.typography.titleSmall,
+                fontWeight = FontWeight.SemiBold,
+            )
+            SettingSwitchRow(
+                title = "Show 7-day in Tile",
+                description = "Include the 7-day window under the 5-hour usage ring.",
+                checked = tileShowsSevenDay,
+                onCheckedChange = onTileShowsSevenDayChange,
+            )
+            SettingSwitchRow(
+                title = "High usage alerts",
+                description = "Notify on this phone when either window reaches 90%.",
+                checked = highUsageAlertsEnabled,
+                onCheckedChange = onHighUsageAlertsChange,
+            )
+            Row(verticalAlignment = Alignment.CenterVertically) {
                 Button(
                     onClick = onRefresh,
                     enabled = token.isNotBlank() && !isRefreshing,
@@ -391,6 +463,40 @@ private fun PhoneSettingsPanel(
                 )
             }
         }
+    }
+}
+
+@Composable
+private fun SettingSwitchRow(
+    title: String,
+    description: String,
+    checked: Boolean,
+    onCheckedChange: (Boolean) -> Unit,
+) {
+    Row(
+        modifier = Modifier.fillMaxWidth(),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Column(
+            modifier = Modifier.weight(1f),
+            verticalArrangement = Arrangement.spacedBy(2.dp),
+        ) {
+            Text(
+                text = title,
+                style = MaterialTheme.typography.titleSmall,
+                fontWeight = FontWeight.SemiBold,
+            )
+            Text(
+                text = description,
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+        }
+        Spacer(modifier = Modifier.width(12.dp))
+        Switch(
+            checked = checked,
+            onCheckedChange = onCheckedChange,
+        )
     }
 }
 

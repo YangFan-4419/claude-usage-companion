@@ -24,6 +24,10 @@
             </intent-filter>
         </activity>
 
+        <activity
+            android:name="com.usagecompanion.claude.wear.WearSettingsActivity"
+            android:exported="false" />
+
         <service
             android:name="com.usagecompanion.claude.wear.UsageDataListenerService"
             android:exported="true">

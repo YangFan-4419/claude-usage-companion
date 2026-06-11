@@ -1,20 +1,37 @@
 package com.usagecompanion.claude.wear
 
-import android.app.Activity
-import android.content.Context
-import android.graphics.Canvas
-import android.graphics.Color
-import android.graphics.Paint
-import android.graphics.RectF
+import android.content.Intent
 import android.os.Bundle
-import android.view.Gravity
-import android.view.View
-import android.widget.LinearLayout
-import android.widget.ProgressBar
-import android.widget.TextView
-import androidx.core.graphics.toColorInt
+import androidx.activity.ComponentActivity
+import androidx.activity.compose.setContent
+import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxScope
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.offset
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.runtime.Composable
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
+import androidx.wear.compose.material3.MaterialTheme
+import androidx.wear.compose.material3.Text
+import androidx.wear.compose.material3.TimeText
 
-class WearMainActivity : Activity() {
+class WearMainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         render()
@@ -22,163 +39,179 @@ class WearMainActivity : Activity() {
 
     override fun onResume() {
         super.onResume()
+        WearSnapshotRequester(this).request()
         render()
     }
 
     private fun render() {
         val snapshot = WearSnapshotStore(this).read()
-        if (snapshot.hasUsage && snapshot.watchStyle == WearSnapshotStore.STYLE_RING) {
-            setContentView(FitRingView(this, snapshot))
-            return
+        setContent {
+            ClaudeWearTheme {
+                WearMainScreen(
+                    snapshot = snapshot,
+                    onSettingsClick = {
+                        startActivity(Intent(this, WearSettingsActivity::class.java))
+                    },
+                )
+            }
         }
+    }
+}
 
-        val root = LinearLayout(this).apply {
-            orientation = LinearLayout.VERTICAL
-            gravity = Gravity.CENTER
-            setPadding(20, 14, 20, 14)
-            setBackgroundColor("#000000".toColorInt())
-        }
-
-        if (!snapshot.hasUsage) {
-            root.addView(text("Set up on phone", 15, "#FFFFFF", bold = true))
-            root.addView(text("Open phone app", 13, COLOR_TEXT_DIM, bold = false))
-            root.addView(text("OAuth token required", 12, COLOR_TEXT_FAINT, bold = false))
+@Composable
+private fun WearMainScreen(
+    snapshot: WearSnapshot,
+    onSettingsClick: () -> Unit,
+) {
+    Box(
+        modifier = Modifier
+            .fillMaxSize()
+            .background(MaterialTheme.colorScheme.background),
+    ) {
+        TimeText()
+        if (snapshot.hasUsage) {
+            UsageContent(snapshot)
         } else {
-            when (snapshot.watchStyle) {
-                WearSnapshotStore.STYLE_BAR -> renderBar(root, snapshot)
-                WearSnapshotStore.STYLE_COMPACT -> renderCompact(root, snapshot)
-                else -> renderRing(root, snapshot)
-            }
+            SetupContent(
+                modifier = Modifier
+                    .align(Alignment.Center)
+                    .padding(bottom = 46.dp),
+            )
         }
-
-        setContentView(root)
-    }
-
-    private fun renderRing(root: LinearLayout, snapshot: WearSnapshot) {
-        val accent = usageColor(snapshot)
-        root.addView(text("Claude Usage", 15, "#FFFFFF", bold = true))
-        root.addView(text("5h ${snapshot.fiveHourPercent}% used", 22, accent, bold = true))
-        root.addView(text("7d ${snapshot.sevenDayPercent}% used", 14, COLOR_TEXT_DIM, bold = false))
-        root.addView(text("reset ${snapshot.fiveHourResetLabel} / ${snapshot.sevenDayResetLabel}", 12, COLOR_TEXT_FAINT, bold = false))
-    }
-
-    private fun renderBar(root: LinearLayout, snapshot: WearSnapshot) {
-        val accent = usageColor(snapshot)
-        root.addView(text("Claude Usage", 14, COLOR_TEXT_DIM, bold = false))
-        root.addView(text("5h ${snapshot.fiveHourPercent}% used", 28, accent, bold = true))
-        root.addView(
-            ProgressBar(this, null, android.R.attr.progressBarStyleHorizontal).apply {
-                max = 100
-                progress = snapshot.fiveHourPercent
-                progressTintList = android.content.res.ColorStateList.valueOf(accent.toColorInt())
-                progressBackgroundTintList = android.content.res.ColorStateList.valueOf("#3C4043".toColorInt())
-                layoutParams = LinearLayout.LayoutParams(132, 10).apply {
-                    topMargin = 6
-                    bottomMargin = 8
-                }
-            },
+        SettingsButton(
+            modifier = Modifier
+                .align(Alignment.BottomCenter)
+                .padding(bottom = 26.dp),
+            onSettingsClick = onSettingsClick,
         )
-        root.addView(text("7d ${snapshot.sevenDayPercent}% used", 14, COLOR_TEXT_DIM, bold = true))
-        root.addView(text("reset ${snapshot.fiveHourResetLabel} / ${snapshot.sevenDayResetLabel}", 12, COLOR_TEXT_FAINT, bold = false))
     }
+}
 
-    private fun renderCompact(root: LinearLayout, snapshot: WearSnapshot) {
-        val accent = usageColor(snapshot)
-        root.addView(text("5h ${snapshot.fiveHourPercent}%", 26, accent, bold = true))
-        root.addView(text("7d ${snapshot.sevenDayPercent}%", 20, COLOR_TEXT_DIM, bold = true))
-        root.addView(text("${snapshot.fiveHourResetLabel} / ${snapshot.sevenDayResetLabel}", 13, COLOR_TEXT_FAINT, bold = false))
+@Composable
+private fun BoxScope.UsageContent(snapshot: WearSnapshot) {
+    Text(
+        modifier = Modifier
+            .fillMaxWidth()
+            .offset(y = 46.dp),
+        text = "Claude Usage",
+        color = MaterialTheme.colorScheme.onBackground,
+        fontSize = 13.sp,
+        fontWeight = FontWeight.Bold,
+        textAlign = TextAlign.Center,
+    )
+    PositionedUsageLine(
+        modifier = Modifier
+            .align(Alignment.TopCenter)
+            .offset(y = 82.dp),
+        label = "5-hour",
+        percent = snapshot.fiveHourPercent,
+    )
+    PositionedUsageLine(
+        modifier = Modifier
+            .align(Alignment.TopCenter)
+            .offset(y = 122.dp),
+        label = "7-day",
+        percent = snapshot.sevenDayPercent,
+    )
+}
+
+@Composable
+private fun SetupContent(modifier: Modifier = Modifier) {
+    Column(
+        modifier = modifier,
+        horizontalAlignment = Alignment.CenterHorizontally,
+    ) {
+        Text(
+            text = "Set up on phone",
+            color = MaterialTheme.colorScheme.onBackground,
+            fontSize = 15.sp,
+            fontWeight = FontWeight.Bold,
+            textAlign = TextAlign.Center,
+        )
+        Spacer(modifier = Modifier.height(4.dp))
+        Text(
+            text = "OAuth token required",
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            fontSize = 12.sp,
+            textAlign = TextAlign.Center,
+        )
     }
+}
 
-    private fun text(value: String, sizeSp: Int, color: String, bold: Boolean): TextView {
-        return TextView(this).apply {
-            text = value
-            textSize = sizeSp.toFloat()
-            setTextColor(color.toColorInt())
-            gravity = Gravity.CENTER
-            includeFontPadding = false
-            if (bold) typeface = android.graphics.Typeface.DEFAULT_BOLD
-        }
-    }
-
-    private class FitRingView(
-        context: Context,
-        private val snapshot: WearSnapshot,
-    ) : View(context) {
-        private val ringPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
-            style = Paint.Style.STROKE
-            strokeCap = Paint.Cap.ROUND
-        }
-        private val textPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
-            textAlign = Paint.Align.CENTER
-        }
-
-        override fun onDraw(canvas: Canvas) {
-            super.onDraw(canvas)
-            canvas.drawColor(Color.BLACK)
-
-            val centerX = width / 2f
-            val centerY = height / 2f
-            val minSize = minOf(width, height).toFloat()
-            val accent = usageColor(snapshot)
-            val stroke = minSize * 0.045f
-            val outer = RectF(
-                centerX - minSize * 0.37f,
-                centerY - minSize * 0.37f,
-                centerX + minSize * 0.37f,
-                centerY + minSize * 0.37f,
+@Composable
+private fun PositionedUsageLine(
+    modifier: Modifier = Modifier,
+    label: String,
+    percent: Int,
+) {
+    val accent = usageAccent(percent)
+    Column(
+        modifier = modifier.width(150.dp),
+        horizontalAlignment = Alignment.CenterHorizontally,
+    ) {
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Text(
+                text = label,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                fontSize = 10.sp,
+                fontWeight = FontWeight.Bold,
+                maxLines = 1,
             )
-
-            drawRing(canvas, outer, stroke, COLOR_TRACK, 100)
-            drawRing(canvas, outer, stroke, accent, snapshot.fiveHourPercent)
-
-            textPaint.typeface = android.graphics.Typeface.DEFAULT_BOLD
-            textPaint.textSize = minSize * 0.054f
-            textPaint.color = Color.WHITE
-            canvas.drawText("Claude Usage", centerX, centerY - minSize * 0.17f, textPaint)
-
-            textPaint.typeface = android.graphics.Typeface.DEFAULT_BOLD
-            textPaint.textSize = minSize * 0.16f
-            textPaint.color = Color.WHITE
-            canvas.drawText("${snapshot.fiveHourPercent}%", centerX, centerY + minSize * 0.035f, textPaint)
-
-            textPaint.typeface = android.graphics.Typeface.DEFAULT
-            textPaint.textSize = minSize * 0.038f
-            textPaint.color = Color.parseColor(COLOR_TEXT_DIM)
-            canvas.drawText("5h used", centerX, centerY + minSize * 0.14f, textPaint)
-
-            textPaint.textSize = minSize * 0.032f
-            textPaint.color = Color.parseColor(COLOR_TEXT_FAINT)
-            canvas.drawText(
-                "reset ${snapshot.fiveHourResetLabel} · 7d ${snapshot.sevenDayPercent}%",
-                centerX,
-                centerY + minSize * 0.195f,
-                textPaint,
+            Text(
+                text = "${percent}% used",
+                color = accent,
+                fontSize = 14.sp,
+                fontWeight = FontWeight.Bold,
+                maxLines = 1,
             )
         }
-
-        private fun drawRing(canvas: Canvas, rect: RectF, stroke: Float, color: String, percent: Int) {
-            ringPaint.strokeWidth = stroke
-            ringPaint.color = Color.parseColor(color)
-            canvas.drawArc(rect, -90f, 360f * percent.coerceIn(0, 100) / 100f, false, ringPaint)
-        }
-
+        Spacer(modifier = Modifier.height(4.dp))
+        ProgressTrack(percent = percent, color = accent)
     }
+}
 
-    private companion object {
-        const val CLAUDE_ORANGE = "#D97250"
-        const val COLOR_YELLOW = "#FACC15"
-        const val COLOR_DEEP_ORANGE = "#F97316"
-        const val COLOR_RED = "#EF4444"
-        const val COLOR_TRACK = "#2B2B2B"
-        const val COLOR_TEXT_DIM = "#C9C3BF"
-        const val COLOR_TEXT_FAINT = "#8F8782"
+@Composable
+private fun ProgressTrack(percent: Int, color: androidx.compose.ui.graphics.Color) {
+    Box(
+        modifier = Modifier
+            .fillMaxWidth()
+            .height(6.dp)
+            .clip(RoundedCornerShape(percent = 50))
+            .background(MaterialTheme.colorScheme.surfaceContainer),
+    ) {
+        Box(
+            modifier = Modifier
+                .fillMaxWidth(percent.coerceIn(0, 100) / 100f)
+                .height(6.dp)
+                .clip(RoundedCornerShape(percent = 50))
+                .background(color),
+        )
+    }
+}
 
-        fun usageColor(snapshot: WearSnapshot): String =
-            when {
-                snapshot.fiveHourPercent > 100 || snapshot.sevenDayPercent > 100 -> COLOR_RED
-                snapshot.fiveHourPercent >= 90 || snapshot.sevenDayPercent >= 90 -> COLOR_DEEP_ORANGE
-                snapshot.fiveHourPercent >= 70 || snapshot.sevenDayPercent >= 70 -> COLOR_YELLOW
-                else -> CLAUDE_ORANGE
-            }
+@Composable
+private fun SettingsButton(
+    modifier: Modifier = Modifier,
+    onSettingsClick: () -> Unit,
+) {
+    Box(
+        modifier = modifier
+            .width(112.dp)
+            .height(34.dp)
+            .clip(RoundedCornerShape(percent = 50))
+            .background(MaterialTheme.colorScheme.primaryContainer)
+            .clickable(onClick = onSettingsClick),
+        contentAlignment = Alignment.Center,
+    ) {
+        Text(
+            text = "Settings",
+            color = MaterialTheme.colorScheme.onPrimaryContainer,
+            fontWeight = FontWeight.Bold,
+            fontSize = 13.sp,
+        )
     }
 }

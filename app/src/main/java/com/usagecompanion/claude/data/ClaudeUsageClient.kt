@@ -59,6 +59,8 @@ class ClaudeUsageClient {
                 sourceLabel = "Phone direct",
                 hasUsage = true,
                 watchStyle = style,
+                tileShowsSevenDay = true,
+                highUsageAlertsEnabled = false,
             )
         }
     }

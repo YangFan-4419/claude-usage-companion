@@ -13,6 +13,8 @@ data class UsageSnapshot(
     val sourceLabel: String,
     val hasUsage: Boolean,
     val watchStyle: WatchProgressStyle,
+    val tileShowsSevenDay: Boolean,
+    val highUsageAlertsEnabled: Boolean,
 )
 
 enum class WatchProgressStyle(val id: String, val label: String) {

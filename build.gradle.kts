@@ -25,6 +25,24 @@ fun adbPath(): String {
     return androidSdkDir().resolve("platform-tools/$executable").absolutePath
 }
 
+fun Project.deviceProperty(serial: String, propertyName: String): String {
+    val output = ByteArrayOutputStream()
+    exec {
+        commandLine(adbPath(), "-s", serial, "shell", "getprop", propertyName)
+        standardOutput = output
+        isIgnoreExitValue = true
+    }
+    return output.toString().trim()
+}
+
+fun Project.looksLikeWearDevice(serial: String, deviceLine: String): Boolean {
+    return deviceLine.contains("gwear", ignoreCase = true) ||
+        deviceLine.contains("wear", ignoreCase = true) ||
+        deviceLine.contains("watch", ignoreCase = true) ||
+        deviceProperty(serial, "ro.product.characteristics").contains("watch", ignoreCase = true) ||
+        deviceProperty(serial, "ro.build.characteristics").contains("watch", ignoreCase = true)
+}
+
 fun Project.serialArgs(propertyName: String, targetKind: String): List<String> {
     val serial = providers.gradleProperty(propertyName)
         .orElse(providers.environmentVariable("ANDROID_SERIAL"))
@@ -43,21 +61,26 @@ fun Project.serialArgs(propertyName: String, targetKind: String): List<String> {
         .lineSequence()
         .map { it.trim() }
         .filter { it.contains(Regex("\\sdevice\\s")) }
-        .filter {
+        .map { line -> line.substringBefore(' ').trim() to line }
+        .filter { (serial, line) ->
+            val isEmulator = serial.startsWith("emulator-")
+            val looksLikeWear = looksLikeWearDevice(serial, line)
             when (targetKind) {
-                "wear" -> it.contains("gwear", ignoreCase = true) || it.contains("wear", ignoreCase = true)
-                "phone" -> !it.contains("gwear", ignoreCase = true) && !it.contains("wear", ignoreCase = true)
+                "wear" -> looksLikeWear
+                "phone" -> !looksLikeWear
+                "realWear" -> !isEmulator && looksLikeWear
+                "realPhone" -> !isEmulator && !looksLikeWear
                 else -> false
             }
         }
-        .map { it.substringBefore(' ').trim() }
+        .map { (serial, _) -> serial }
         .filter { it.isNotBlank() }
         .toList()
 
     return when (matches.size) {
         1 -> listOf("-s", matches.single())
-        0 -> throw GradleException("No $targetKind emulator/device found. Start the right emulator or pass -P$propertyName=<serial>.")
-        else -> throw GradleException("Multiple $targetKind devices found: ${matches.joinToString()}. Pass -P$propertyName=<serial>.")
+        0 -> throw GradleException("No $targetKind target found. Connect the right device or pass -P$propertyName=<serial>.")
+        else -> throw GradleException("Multiple $targetKind targets found: ${matches.joinToString()}. Pass -P$propertyName=<serial>.")
     }
 }
 
@@ -68,8 +91,8 @@ fun Project.adbExec(serialProperty: String, targetKind: String, vararg args: Str
 }
 
 tasks.register("runPhoneDebug") {
-    group = "emulator"
-    description = "Install and launch the phone app. Use -PphoneSerial=emulator-5554 or ANDROID_SERIAL when multiple devices are connected."
+    group = "device"
+    description = "Install and launch the phone app on an emulator or device. Use -PphoneSerial=<serial> or ANDROID_SERIAL when multiple targets are connected."
     dependsOn(":app:assembleDebug")
 
     doLast {
@@ -80,13 +103,37 @@ tasks.register("runPhoneDebug") {
 }
 
 tasks.register("runWearDebug") {
-    group = "emulator"
-    description = "Install and launch the Wear OS app. Use -PwearSerial=emulator-5556 or ANDROID_SERIAL when multiple devices are connected."
+    group = "device"
+    description = "Install and launch the Wear OS app on an emulator or device. Use -PwearSerial=<serial> or ANDROID_SERIAL when multiple targets are connected."
     dependsOn(":wear:assembleDebug")
 
     doLast {
         val apk = rootProject.file("wear/build/outputs/apk/debug/wear-debug.apk").absolutePath
         adbExec("wearSerial", "wear", "install", "-r", apk)
         adbExec("wearSerial", "wear", "shell", "am", "start", "-n", "com.usagecompanion.claude/com.usagecompanion.claude.wear.WearMainActivity")
+    }
+}
+
+tasks.register("runPhoneDeviceDebug") {
+    group = "device"
+    description = "Install and launch the phone app on a physical Android device. Use -PphoneSerial=<serial> when auto-detection is ambiguous."
+    dependsOn(":app:assembleDebug")
+
+    doLast {
+        val apk = rootProject.file("app/build/outputs/apk/debug/app-debug.apk").absolutePath
+        adbExec("phoneSerial", "realPhone", "install", "-r", apk)
+        adbExec("phoneSerial", "realPhone", "shell", "am", "start", "-n", "com.usagecompanion.claude/.MainActivity")
+    }
+}
+
+tasks.register("runWearDeviceDebug") {
+    group = "device"
+    description = "Install and launch the Wear OS app on a physical Wear device. Use -PwearSerial=<serial> when auto-detection is ambiguous."
+    dependsOn(":wear:assembleDebug")
+
+    doLast {
+        val apk = rootProject.file("wear/build/outputs/apk/debug/wear-debug.apk").absolutePath
+        adbExec("wearSerial", "realWear", "install", "-r", apk)
+        adbExec("wearSerial", "realWear", "shell", "am", "start", "-n", "com.usagecompanion.claude/com.usagecompanion.claude.wear.WearMainActivity")
     }
 }

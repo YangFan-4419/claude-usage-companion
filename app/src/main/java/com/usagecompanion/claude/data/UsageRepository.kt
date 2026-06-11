@@ -19,6 +19,8 @@ class UsageRepository(context: Context) {
             sourceLabel = prefs.getString(KEY_SOURCE, null) ?: "Waiting for phone token",
             hasUsage = prefs.getBoolean(KEY_HAS_USAGE, false),
             watchStyle = WatchProgressStyle.fromId(prefs.getString(KEY_WATCH_STYLE, null)),
+            tileShowsSevenDay = prefs.getBoolean(KEY_TILE_SHOWS_SEVEN_DAY, true),
+            highUsageAlertsEnabled = prefs.getBoolean(KEY_HIGH_USAGE_ALERTS, false),
         )
     }
 
@@ -69,6 +71,28 @@ class UsageRepository(context: Context) {
             .putString(KEY_SOURCE, snapshot.sourceLabel)
             .putBoolean(KEY_HAS_USAGE, snapshot.hasUsage)
             .putString(KEY_WATCH_STYLE, snapshot.watchStyle.id)
+            .putBoolean(KEY_TILE_SHOWS_SEVEN_DAY, snapshot.tileShowsSevenDay)
+            .putBoolean(KEY_HIGH_USAGE_ALERTS, snapshot.highUsageAlertsEnabled)
+            .apply()
+    }
+
+    fun updateTileShowsSevenDay(enabled: Boolean): UsageSnapshot {
+        val next = currentSnapshot().copy(tileShowsSevenDay = enabled)
+        save(next)
+        return next
+    }
+
+    fun updateHighUsageAlerts(enabled: Boolean): UsageSnapshot {
+        val next = currentSnapshot().copy(highUsageAlertsEnabled = enabled)
+        save(next)
+        return next
+    }
+
+    fun lastRefreshAt(): Long = prefs.getLong(KEY_LAST_REFRESH_AT, 0L)
+
+    fun markRefreshedAt(timestamp: Long) {
+        prefs.edit()
+            .putLong(KEY_LAST_REFRESH_AT, timestamp)
             .apply()
     }
 
@@ -86,6 +110,8 @@ class UsageRepository(context: Context) {
             sourceLabel = "Waiting for phone token",
             hasUsage = false,
             watchStyle = style,
+            tileShowsSevenDay = currentSnapshot().tileShowsSevenDay,
+            highUsageAlertsEnabled = currentSnapshot().highUsageAlertsEnabled,
         )
     }
 
@@ -102,5 +128,8 @@ class UsageRepository(context: Context) {
         const val KEY_SOURCE = "source"
         const val KEY_HAS_USAGE = "has_usage"
         const val KEY_WATCH_STYLE = "watch_style"
+        const val KEY_LAST_REFRESH_AT = "last_refresh_at"
+        const val KEY_TILE_SHOWS_SEVEN_DAY = "tile_shows_seven_day"
+        const val KEY_HIGH_USAGE_ALERTS = "high_usage_alerts"
     }
 }
