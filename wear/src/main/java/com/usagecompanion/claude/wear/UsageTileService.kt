@@ -43,7 +43,7 @@ class UsageTileService : TileService() {
         return TileBuilders.Tile.Builder()
             .setResourcesVersion(RESOURCES_VERSION)
             .setTimeline(timeline)
-            .setFreshnessIntervalMillis(60_000L)
+            .setFreshnessIntervalMillis(300_000L)
             .build()
     }
 

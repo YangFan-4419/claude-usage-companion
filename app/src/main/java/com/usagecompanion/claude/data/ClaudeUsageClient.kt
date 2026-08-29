@@ -3,9 +3,10 @@ package com.usagecompanion.claude.data
 import java.net.HttpURLConnection
 import java.net.URL
 import java.time.Instant
-import java.time.ZoneId
-import java.time.format.DateTimeFormatter
 import kotlin.math.roundToInt
+
+/** 令牌被拒。单独一个类型，好让上层知道「该续期了」而不是「网络挂了」。 */
+class UnauthorizedException(message: String) : Exception(message)
 
 class ClaudeUsageClient {
     fun fetch(token: String, style: WatchProgressStyle): Result<UsageSnapshot> {
@@ -38,12 +39,14 @@ class ClaudeUsageClient {
             connection.disconnect()
 
             if (fiveHourRaw.isNullOrBlank() && sevenDayRaw.isNullOrBlank()) {
-                val message = when (code) {
-                    HttpURLConnection.HTTP_UNAUTHORIZED -> "OAuth token rejected by Anthropic"
-                    HttpURLConnection.HTTP_FORBIDDEN -> "OAuth token is not allowed to access Claude usage"
-                    else -> "Usage headers missing from Anthropic response (HTTP $code)"
+                when (code) {
+                    HttpURLConnection.HTTP_UNAUTHORIZED ->
+                        throw UnauthorizedException("OAuth token 已失效")
+                    HttpURLConnection.HTTP_FORBIDDEN ->
+                        throw UnauthorizedException("OAuth token 无权访问用量")
+                    else ->
+                        throw IllegalStateException("响应里没有用量头 (HTTP $code)")
                 }
-                throw IllegalStateException(message)
             }
 
             UsageSnapshot(

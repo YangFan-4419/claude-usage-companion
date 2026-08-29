@@ -4,6 +4,18 @@ Android + Wear OS companion for monitoring Claude Code usage from a phone.
 
 The phone stores the OAuth token locally, refreshes Claude usage directly, and syncs a usage snapshot to Wear OS through the Wear Data Layer. The watch never owns the OAuth token.
 
+## Changes in this fork
+
+- **Token auto-refresh.** The vault stores the refresh token alongside the
+  access token and renews it automatically, so the phone no longer needs a
+  freshly pasted token every few hours.
+- **Usage is polled every 5 minutes instead of every minute**, cutting probe
+  requests to the API from roughly 1440/day to 288/day.
+
+The refresh endpoint is undocumented and community-reverse-engineered, so it
+may stop working without notice. When it does, the app falls back to the
+original behaviour: it reports the token as rejected and you paste a new one.
+
 ## Screenshots
 
 | Phone app | Wear app | Wear Tile |

@@ -420,7 +420,7 @@ private fun PhoneSettingsPanel(
                     onValueChange = onTokenChange,
                     modifier = Modifier.fillMaxWidth(),
                     singleLine = true,
-                    label = { Text("Stored only on this device") },
+                    label = { Text("粘贴 token 或整段 credentials.json") },
                     visualTransformation = PasswordVisualTransformation(),
                 )
                 Button(onClick = {

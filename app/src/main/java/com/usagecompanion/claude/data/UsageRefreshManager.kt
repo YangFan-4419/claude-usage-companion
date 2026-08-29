@@ -8,6 +8,7 @@ class UsageRefreshManager(
     private val tokenVault: TokenVault = TokenVault(context),
     private val repository: UsageRepository = UsageRepository(context),
     private val usageClient: ClaudeUsageClient = ClaudeUsageClient(),
+    private val authClient: ClaudeAuthClient = ClaudeAuthClient(),
     private val wearSyncRepository: WearSyncRepository = WearSyncRepository(context),
     private val usageAlertNotifier: UsageAlertNotifier = UsageAlertNotifier(context),
 ) {
@@ -40,7 +41,7 @@ class UsageRefreshManager(
     }
 
     fun refreshIfStale(force: Boolean = false, style: WatchProgressStyle? = null): Result<UsageSnapshot> {
-        val token = tokenVault.readToken().orEmpty()
+        var token = tokenVault.readToken().orEmpty()
         if (token.isBlank()) {
             return Result.success(tokenStateSnapshot(hasToken = false))
         }
@@ -52,8 +53,24 @@ class UsageRefreshManager(
             return Result.success(current)
         }
 
+        // 快过期就先续，省得白跑一次请求
+        val expiresAt = tokenVault.expiresAt()
+        if (expiresAt > 0L && now >= expiresAt - EXPIRY_MARGIN_MS) {
+            renewAccessToken()?.let { token = it }
+        }
+
         val targetStyle = style ?: current.watchStyle
-        return usageClient.fetch(token, targetStyle)
+        var result = usageClient.fetch(token, targetStyle)
+
+        // 服务端说令牌不行（可能过期时间不准），续一次再试
+        if (result.exceptionOrNull() is UnauthorizedException) {
+            val renewed = renewAccessToken()
+            if (renewed != null) {
+                result = usageClient.fetch(renewed, targetStyle)
+            }
+        }
+
+        return result
             .map { refreshed ->
                 refreshed.copy(
                     tileShowsSevenDay = current.tileShowsSevenDay,
@@ -71,12 +88,22 @@ class UsageRefreshManager(
             }
     }
 
+    /** 续期成功返回新的访问令牌，失败返回 null（调用方继续用旧的，让上层报出真实错误）。 */
+    private fun renewAccessToken(): String? {
+        val refreshToken = tokenVault.readRefreshToken() ?: return null
+        val bundle = authClient.refresh(refreshToken).getOrNull() ?: return null
+        tokenVault.updateTokens(bundle.accessToken, bundle.refreshToken, bundle.expiresAt)
+        return bundle.accessToken
+    }
+
     private fun publish(snapshot: UsageSnapshot) {
         UsageWidgetProvider.updateAll(appContext)
         wearSyncRepository.publish(snapshot)
     }
 
     companion object {
-        const val CACHE_TTL_MS = 60_000L
+        const val CACHE_TTL_MS = 300_000L
+        /** 过期前这么久就提前续，避免卡在边界上。 */
+        const val EXPIRY_MARGIN_MS = 300_000L
     }
 }
