@@ -1,5 +1,6 @@
 package com.usagecompanion.claude.data
 
+import android.util.Log
 import org.json.JSONObject
 import java.net.HttpURLConnection
 import java.net.URL
@@ -20,9 +21,14 @@ class ClaudeAuthClient {
         }
         var lastError: Throwable = IllegalStateException("续期失败")
         for (endpoint in ENDPOINTS) {
+            Log.w(TAG, "refresh: trying $endpoint")
             val attempt = attempt(endpoint, refreshToken)
-            attempt.onSuccess { return attempt }
+            attempt.onSuccess {
+                Log.w(TAG, "refresh: OK via $endpoint, expiresAt=${it.expiresAt}, newRefreshToken=${it.refreshToken != null}")
+                return attempt
+            }
             lastError = attempt.exceptionOrNull() ?: lastError
+            Log.w(TAG, "refresh: FAILED via $endpoint -> ${lastError.message}")
         }
         return Result.failure(lastError)
     }
@@ -51,6 +57,7 @@ class ClaudeAuthClient {
         val text = stream?.bufferedReader()?.use { it.readText() }.orEmpty()
         connection.disconnect()
 
+        Log.w(TAG, "refresh: HTTP $code from ${shortHost(endpoint)}, body=${text.take(300)}")
         if (code !in 200..299) {
             throw IllegalStateException("续期失败 HTTP $code (${shortHost(endpoint)}): ${text.take(160)}")
         }
@@ -83,6 +90,7 @@ class ClaudeAuthClient {
         runCatching { URL(url).host }.getOrDefault(url)
 
     private companion object {
+        const val TAG = "ClaudeUsageAuth"
         const val CLIENT_ID = "9d1c250a-e61b-44d9-88ed-5944d1962f5e"
         const val TOKEN_USER_AGENT = "anthropic"
         val ENDPOINTS = listOf(
